@@ -9,7 +9,8 @@ final class ModelRunner: ObservableObject {
     static let shared = ModelRunner()
 
     #if canImport(MLCLLM)
-    private var chatModel: ChatModule? // Replace with actual type from MLCLLM
+    /// Handle to the compiled chat pipeline provided by MLC-LLM.
+    private var chatModel: ChatModule?
     #endif
 
     private init() {
@@ -19,15 +20,31 @@ final class ModelRunner: ObservableObject {
     private func loadModelIfNeeded() {
         #if canImport(MLCLLM)
         guard chatModel == nil else { return }
-        if let url = Bundle.main.url(forResource: "llama1b-chat", withExtension: nil) {
-            do {
-                // NOTE: Replace `ChatModule` init with the correct call once MLCLLM is available.
-                self.chatModel = try ChatModule(contentsOf: url)
-            } catch {
-                assertionFailure("Failed to load model: \(error)")
-            }
-        } else {
-            assertionFailure("Model bundle not found")
+
+        // Location of the model folder inside the app bundle. Must match the name in Xcode.
+        guard let modelFolder = Bundle.main.url(forResource: "llama1b-chat", withExtension: nil) else {
+            assertionFailure("Model folder ‘llama1b-chat’ missing from bundle")
+            return
+        }
+
+        do {
+            /*
+             The ChatModule initializer expects explicit paths for the compiled artifacts.
+             The exact signature may vary slightly between releases – adjust if necessary.
+             */
+
+            let module = try ChatModule(
+                modelJSON: modelFolder.appendingPathComponent("mod.json").path,
+                modelLib:  modelFolder.appendingPathComponent("mlc_lib.metallib").path,
+                paramsPath: modelFolder.path, // folder containing params_shard*.bin
+                tokenizerPath: modelFolder.appendingPathComponent("tokenizer.json").path,
+                maxSeqLen: 4096,
+                chatTemplate: .llama3 // enum from MLCLLM mirroring ours
+            )
+
+            self.chatModel = module
+        } catch {
+            assertionFailure("Failed to create ChatModule: \(error)")
         }
         #endif
     }
@@ -44,7 +61,7 @@ final class ModelRunner: ObservableObject {
 
             Task {
                 do {
-                    for try await token in chatModel.generateTokens(prompt: prompt) {
+                    for try await token in chatModel.streamChat(prompt: prompt) {
                         continuation.yield(token)
                     }
                     continuation.finish()

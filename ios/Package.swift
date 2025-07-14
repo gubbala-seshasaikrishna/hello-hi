@@ -30,11 +30,14 @@ let package = Package(
         )
     ],
     dependencies: [
-        // Add MLC LLM when SPM package is available
+        .package(url: "https://github.com/mlc-ai/mlc-llm.git", .branch("main"))
     ],
     targets: [
         .executableTarget(
             name: "AppModule",
+            dependencies: [
+                .product(name: "MLCLLM", package: "mlc-llm")
+            ],
             path: "MLCLlamaChatApp"
         )
     ]
